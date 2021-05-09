@@ -1,199 +1,537 @@
-// NOTE: Your entrypoint MUST be a top-level function.
 import 'dart:async';
-
-import 'package:as_test/seek.dart';
 import 'package:audio_service/audio_service.dart';
-import 'package:just_audio/just_audio.dart';
 import 'package:audio_session/audio_session.dart';
+import 'package:just_audio/just_audio.dart';
+import 'package:rxdart/rxdart.dart';
 
-void audioPlayerTaskEntrypoint() async {
-  AudioServiceBackground.run(() => AudioPlayerTask());
+class QueueState {
+  final List<MediaItem>? queue;
+  final MediaItem? mediaItem;
+
+  QueueState(this.queue, this.mediaItem);
 }
 
-/// This task defines logic for playing a list of podcast episodes.
-class AudioPlayerTask extends BackgroundAudioTask {
-  late List<MediaItem> queue;
-  AudioPlayer _player = new AudioPlayer();
-  AudioProcessingState? _skipState;
-  Seeker? _seeker;
-  late StreamSubscription<PlaybackEvent> _eventSubscription;
-  int? get index => _player.currentIndex;
-  MediaItem? get mediaItem => index == null ? null : queue[index!];
+class MediaState {
+  final MediaItem? mediaItem;
+  final Duration position;
+
+  MediaState(this.mediaItem, this.position);
+}
+
+class CustomEvent {
+  final int handlerIndex;
+
+  CustomEvent(this.handlerIndex);
+}
+
+class MainSwitchHandler extends SwitchAudioHandler {
+  final List<AudioHandler> handlers;
+  @override
+  BehaviorSubject<dynamic> customState =
+      BehaviorSubject<dynamic>.seeded(CustomEvent(0));
+
+  MainSwitchHandler(this.handlers) : super(handlers.first) {
+    // Configure the app's audio category and attributes for speech.
+    AudioSession.instance.then((session) {
+      session.configure(AudioSessionConfiguration.speech());
+    });
+  }
 
   @override
-  Future<void> onStart(Map<String, dynamic>? params) async {
-    // We configure the audio session for speech since we're playing a podcast.
-    // You can also put this in your app's initialisation if your app doesn't
-    // switch between two types of audio as this example does.
-    if (params == null) {
-      throw StateError("Expected a queue, but got nothing.");
+  Future<dynamic> customAction(
+      String name, Map<String, dynamic>? extras) async {
+    switch (name) {
+      case 'switchToHandler':
+        stop();
+        final index = extras!['index'] as int;
+        inner = handlers[index];
+        customState.add(CustomEvent(index));
+        return null;
+      default:
+        return super.customAction(name, extras);
     }
-    try {
-      queue =
-          params["queue"].map<MediaItem>((i) => MediaItem.fromJson(i)).toList();
-    } catch (e, s) {
-      print(e);
-      print(s);
-      rethrow;
-    }
-    final session = await AudioSession.instance;
-    await session.configure(AudioSessionConfiguration.speech());
+  }
+}
+
+class LoggingAudioHandler extends CompositeAudioHandler {
+  LoggingAudioHandler(AudioHandler inner) : super(inner) {
+    playbackState.listen((state) {
+      _log('playbackState changed: $state');
+    });
+    queue.listen((queue) {
+      _log('queue changed: $queue');
+    });
+    queueTitle.listen((queueTitle) {
+      _log('queueTitle changed: $queueTitle');
+    });
+    mediaItem.listen((mediaItem) {
+      _log('mediaItem changed: $mediaItem');
+    });
+    ratingStyle.listen((ratingStyle) {
+      _log('ratingStyle changed: $ratingStyle');
+    });
+    androidPlaybackInfo.listen((androidPlaybackInfo) {
+      _log('androidPlaybackInfo changed: $androidPlaybackInfo');
+    });
+    customEvent.listen((dynamic customEventStream) {
+      _log('customEvent changed: $customEventStream');
+    });
+    customState.listen((dynamic customState) {
+      _log('customState changed: $customState');
+    });
+  }
+
+  // TODO: Use logger. Use different log levels.
+  void _log(String s) => print('----- LOG: $s');
+
+  @override
+  Future<void> prepare() {
+    _log('prepare()');
+    return super.prepare();
+  }
+
+  @override
+  Future<void> prepareFromMediaId(String mediaId,
+      [Map<String, dynamic>? extras]) {
+    _log('prepareFromMediaId($mediaId, $extras)');
+    return super.prepareFromMediaId(mediaId, extras);
+  }
+
+  @override
+  Future<void> prepareFromSearch(String query, [Map<String, dynamic>? extras]) {
+    _log('prepareFromSearch($query, $extras)');
+    return super.prepareFromSearch(query, extras);
+  }
+
+  @override
+  Future<void> prepareFromUri(Uri uri, [Map<String, dynamic>? extras]) {
+    _log('prepareFromSearch($uri, $extras)');
+    return super.prepareFromUri(uri, extras);
+  }
+
+  @override
+  Future<void> play() {
+    _log('play()');
+    return super.play();
+  }
+
+  @override
+  Future<void> playFromMediaId(String mediaId, [Map<String, dynamic>? extras]) {
+    _log('playFromMediaId($mediaId, $extras)');
+    return super.playFromMediaId(mediaId, extras);
+  }
+
+  @override
+  Future<void> playFromSearch(String query, [Map<String, dynamic>? extras]) {
+    _log('playFromSearch($query, $extras)');
+    return super.playFromSearch(query, extras);
+  }
+
+  @override
+  Future<void> playFromUri(Uri uri, [Map<String, dynamic>? extras]) {
+    _log('playFromUri($uri, $extras)');
+    return super.playFromUri(uri, extras);
+  }
+
+  @override
+  Future<void> playMediaItem(MediaItem mediaItem) {
+    _log('playMediaItem($mediaItem)');
+    return super.playMediaItem(mediaItem);
+  }
+
+  @override
+  Future<void> pause() {
+    _log('pause()');
+    return super.pause();
+  }
+
+  @override
+  Future<void> click([MediaButton button = MediaButton.media]) {
+    _log('click($button)');
+    return super.click(button);
+  }
+
+  @override
+  Future<void> stop() {
+    _log('stop()');
+    return super.stop();
+  }
+
+  @override
+  Future<void> addQueueItem(MediaItem mediaItem) {
+    _log('addQueueItem($mediaItem)');
+    return super.addQueueItem(mediaItem);
+  }
+
+  @override
+  Future<void> addQueueItems(List<MediaItem> mediaItems) {
+    _log('addQueueItems($mediaItems)');
+    return super.addQueueItems(mediaItems);
+  }
+
+  @override
+  Future<void> insertQueueItem(int index, MediaItem mediaItem) {
+    _log('insertQueueItem($index, $mediaItem)');
+    return super.insertQueueItem(index, mediaItem);
+  }
+
+  @override
+  Future<void> updateQueue(List<MediaItem> queue) {
+    _log('updateQueue($queue)');
+    return super.updateQueue(queue);
+  }
+
+  @override
+  Future<void> updateMediaItem(MediaItem mediaItem) {
+    _log('updateMediaItem($mediaItem)');
+    return super.updateMediaItem(mediaItem);
+  }
+
+  @override
+  Future<void> removeQueueItem(MediaItem mediaItem) {
+    _log('removeQueueItem($mediaItem)');
+    return super.removeQueueItem(mediaItem);
+  }
+
+  @override
+  Future<void> removeQueueItemAt(int index) {
+    _log('removeQueueItemAt($index)');
+    return super.removeQueueItemAt(index);
+  }
+
+  @override
+  Future<void> skipToNext() {
+    _log('skipToNext()');
+    return super.skipToNext();
+  }
+
+  @override
+  Future<void> skipToPrevious() {
+    _log('skipToPrevious()');
+    return super.skipToPrevious();
+  }
+
+  @override
+  Future<void> fastForward() {
+    _log('fastForward()');
+    return super.fastForward();
+  }
+
+  @override
+  Future<void> rewind() {
+    _log('rewind()');
+    return super.rewind();
+  }
+
+  @override
+  Future<void> skipToQueueItem(int index) {
+    _log('skipToQueueItem($index)');
+    return super.skipToQueueItem(index);
+  }
+
+  @override
+  Future<void> seek(Duration position) {
+    _log('seek($position)');
+    return super.seek(position);
+  }
+
+  @override
+  Future<void> setRating(Rating rating, Map<String, dynamic>? extras) {
+    _log('setRating($rating, $extras)');
+    return super.setRating(rating, extras);
+  }
+
+  @override
+  Future<void> setCaptioningEnabled(bool enabled) {
+    _log('setCaptioningEnabled($enabled)');
+    return super.setCaptioningEnabled(enabled);
+  }
+
+  @override
+  Future<void> setRepeatMode(AudioServiceRepeatMode repeatMode) {
+    _log('setRepeatMode($repeatMode)');
+    return super.setRepeatMode(repeatMode);
+  }
+
+  @override
+  Future<void> setShuffleMode(AudioServiceShuffleMode shuffleMode) {
+    _log('setShuffleMode($shuffleMode)');
+    return super.setShuffleMode(shuffleMode);
+  }
+
+  @override
+  Future<void> seekBackward(bool begin) {
+    _log('seekBackward($begin)');
+    return super.seekBackward(begin);
+  }
+
+  @override
+  Future<void> seekForward(bool begin) {
+    _log('seekForward($begin)');
+    return super.seekForward(begin);
+  }
+
+  @override
+  Future<void> setSpeed(double speed) {
+    _log('setSpeed($speed)');
+    return super.setSpeed(speed);
+  }
+
+  @override
+  Future<dynamic> customAction(
+      String name, Map<String, dynamic>? extras) async {
+    _log('customAction($name, extras)');
+    final dynamic result = await super.customAction(name, extras);
+    _log('customAction -> $result');
+    return result;
+  }
+
+  @override
+  Future<void> onTaskRemoved() {
+    _log('onTaskRemoved()');
+    return super.onTaskRemoved();
+  }
+
+  @override
+  Future<void> onNotificationDeleted() {
+    _log('onNotificationDeleted()');
+    return super.onNotificationDeleted();
+  }
+
+  @override
+  Future<List<MediaItem>> getChildren(String parentMediaId,
+      [Map<String, dynamic>? options]) async {
+    _log('getChildren($parentMediaId, $options)');
+    final result = await super.getChildren(parentMediaId, options);
+    _log('getChildren -> $result');
+    return result;
+  }
+
+  @override
+  ValueStream<Map<String, dynamic>?> subscribeToChildren(String parentMediaId) {
+    _log('subscribeToChildren($parentMediaId)');
+    final result = super.subscribeToChildren(parentMediaId);
+    result.listen((options) {
+      _log('$parentMediaId children changed with options $options');
+    });
+    return result;
+  }
+
+  @override
+  Future<MediaItem?> getMediaItem(String mediaId) async {
+    _log('getMediaItem($mediaId)');
+    final result = await super.getMediaItem(mediaId);
+    _log('getMediaItem -> $result');
+    return result;
+  }
+
+  @override
+  Future<List<MediaItem>> search(String query,
+      [Map<String, dynamic>? extras]) async {
+    _log('search($query, $extras)');
+    final result = await super.search(query, extras);
+    _log('search -> $result');
+    return result;
+  }
+
+  @override
+  Future<void> androidSetRemoteVolume(int volumeIndex) {
+    _log('androidSetRemoteVolume($volumeIndex)');
+    return super.androidSetRemoteVolume(volumeIndex);
+  }
+
+  @override
+  Future<void> androidAdjustRemoteVolume(AndroidVolumeDirection direction) {
+    _log('androidAdjustRemoteVolume($direction)');
+    return super.androidAdjustRemoteVolume(direction);
+  }
+}
+
+/// An [AudioHandler] for playing a list of podcast episodes.
+class AudioPlayerHandler extends BaseAudioHandler
+    with QueueHandler, SeekHandler {
+  // ignore: close_sinks
+  final BehaviorSubject<List<MediaItem>> _recentSubject =
+      BehaviorSubject<List<MediaItem>>();
+  final _mediaLibrary = MediaLibrary();
+  final _player = AudioPlayer();
+
+  int? get index => _player.currentIndex;
+
+  AudioPlayerHandler() {
+    _init();
+  }
+
+  Future<void> _init() async {
+    // Load and broadcast the queue
+    queue.add(_mediaLibrary.items[MediaLibrary.albumsRootId]);
+    // For Android 11, record the most recent item so it can be resumed.
+    mediaItem
+        .whereType<MediaItem>()
+        .listen((item) => _recentSubject.add([item]));
     // Broadcast media item changes.
     _player.currentIndexStream.listen((index) {
-      if (index != null) AudioServiceBackground.setMediaItem(queue[index]);
+      if (index != null) mediaItem.add(queue.value![index]);
     });
     // Propagate all events from the audio player to AudioService clients.
-    _eventSubscription = _player.playbackEventStream.listen((event) {
-      _broadcastState();
-    });
-    // Special processing for state transitions.
+    _player.playbackEventStream.listen(_broadcastState);
+    // In this example, the service stops when reaching the end.
     _player.processingStateStream.listen((state) {
-      switch (state) {
-        case ProcessingState.completed:
-          // In this example, the service stops when reaching the end.
-          onStop();
-          break;
-        case ProcessingState.ready:
-          // If we just came from skipping between tracks, clear the skip
-          // state now that we're ready to play.
-          _skipState = null;
-          break;
-        default:
-          break;
-      }
+      if (state == ProcessingState.completed) stop();
     });
-
-    // Load and broadcast the queue
-    AudioServiceBackground.setQueue(queue);
     try {
+      print("### _player.load");
+      // After a cold restart (on Android), _player.load jumps straight from
+      // the loading state to the completed state. Inserting a delay makes it
+      // work. Not sure why!
+      //await Future.delayed(Duration(seconds: 2)); // magic delay
       await _player.setAudioSource(ConcatenatingAudioSource(
-        children:
-            queue.map((item) => AudioSource.uri(Uri.parse(item.id))).toList(),
+        children: queue.value!
+            .map((item) => AudioSource.uri(Uri.parse(item.id)))
+            .toList(),
       ));
-      // In this example, we automatically start playing on start.
-      onPlay();
+      print("### loaded");
     } catch (e) {
       print("Error: $e");
-      onStop();
     }
   }
 
   @override
-  Future<void> onSkipToQueueItem(String mediaId) async {
-    // Then default implementations of onSkipToNext and onSkipToPrevious will
-    // delegate to this method.
-    final newIndex = queue.indexWhere((item) => item.id == mediaId);
-    if (newIndex == -1) return;
-    // During a skip, the player may enter the buffering state. We could just
-    // propagate that state directly to AudioService clients but AudioService
-    // has some more specific states we could use for skipping to next and
-    // previous. This variable holds the preferred state to send instead of
-    // buffering during a skip, and it is cleared as soon as the player exits
-    // buffering (see the listener in onStart).
-    _skipState = newIndex > index!
-        ? AudioProcessingState.skippingToNext
-        : AudioProcessingState.skippingToPrevious;
+  Future<List<MediaItem>> getChildren(String parentMediaId,
+      [Map<String, dynamic>? options]) async {
+    switch (parentMediaId) {
+      case AudioService.recentRootId:
+        // When the user resumes a media session, tell the system what the most
+        // recently played item was.
+        print("### get recent children: ${_recentSubject.value}:");
+        return _recentSubject.value ?? [];
+      default:
+        // Allow client to browse the media library.
+        print(
+            "### get $parentMediaId children: ${_mediaLibrary.items[parentMediaId]}:");
+        return _mediaLibrary.items[parentMediaId]!;
+    }
+  }
+
+  @override
+  ValueStream<Map<String, dynamic>> subscribeToChildren(String parentMediaId) {
+    switch (parentMediaId) {
+      case AudioService.recentRootId:
+        return _recentSubject.map((_) => <String, dynamic>{});
+      default:
+        return Stream.value(_mediaLibrary.items[parentMediaId])
+                .map((_) => <String, dynamic>{})
+            as ValueStream<Map<String, dynamic>>;
+    }
+  }
+
+  @override
+  Future<void> skipToQueueItem(int index) async {
+    // Then default implementations of skipToNext and skipToPrevious provided by
+    // the [QueueHandler] mixin will delegate to this method.
+    if (index < 0 || index >= queue.value!.length) return;
     // This jumps to the beginning of the queue item at newIndex.
-    _player.seek(Duration.zero, index: newIndex);
+    _player.seek(Duration.zero, index: index);
     // Demonstrate custom events.
-    AudioServiceBackground.sendCustomEvent('skip to $newIndex');
+    customEventSubject.add('skip to $index');
   }
 
   @override
-  Future<void> onPlay() => _player.play();
+  Future<void> play() => _player.play();
 
   @override
-  Future<void> onPause() => _player.pause();
+  Future<void> pause() => _player.pause();
 
   @override
-  Future<void> onSeekTo(Duration position) => _player.seek(position);
+  Future<void> seek(Duration position) => _player.seek(position);
 
   @override
-  Future<void> onFastForward() => _seekRelative(fastForwardInterval);
-
-  @override
-  Future<void> onRewind() => _seekRelative(-rewindInterval);
-
-  @override
-  Future<void> onSeekForward(bool begin) async => _seekContinuously(begin, 1);
-
-  @override
-  Future<void> onSeekBackward(bool begin) async => _seekContinuously(begin, -1);
-
-  @override
-  Future<void> onStop() async {
-    await _player.dispose();
-    _eventSubscription.cancel();
-    // It is important to wait for this state to be broadcast before we shut
-    // down the task. If we don't, the background task will be destroyed before
-    // the message gets sent to the UI.
-    await _broadcastState();
-    // Shut down this task
-    await super.onStop();
+  Future<void> stop() async {
+    await _player.stop();
+    await playbackState.firstWhere(
+        (state) => state.processingState == AudioProcessingState.idle);
   }
 
-  /// Jumps away from the current position by [offset].
-  Future<void> _seekRelative(Duration offset) async {
-    var newPosition = _player.position + offset;
-    // Make sure we don't jump out of bounds.
-    if (newPosition < Duration.zero) newPosition = Duration.zero;
-    if (newPosition > mediaItem!.duration!) newPosition = mediaItem!.duration!;
-    // Perform the jump via a seek.
-    await _player.seek(newPosition);
-  }
-
-  /// Begins or stops a continuous seek in [direction]. After it begins it will
-  /// continue seeking forward or backward by 10 seconds within the audio, at
-  /// intervals of 1 second in app time.
-  void _seekContinuously(bool begin, int direction) {
-    _seeker?.stop();
-    if (begin) {
-      _seeker = Seeker(_player, Duration(seconds: 10 * direction),
-          Duration(seconds: 1), mediaItem!)
-        ..start();
-    }
+  @override
+  Future<void> updateQueue(List<MediaItem> newQueue) async {
+    await _player.stop();
+    await _player.setAudioSource(ConcatenatingAudioSource(
+      children: newQueue
+          .map(
+            (item) => AudioSource.uri(Uri.parse(item.id)),
+          )
+          .toList(),
+    ));
+    await _player.play();
+    super.updateMediaItem(newQueue.first);
+    return super.updateQueue(newQueue);
   }
 
   /// Broadcasts the current state to all clients.
-  Future<void> _broadcastState() async {
-    await AudioServiceBackground.setState(
+  void _broadcastState(PlaybackEvent event) {
+    final playing = _player.playing;
+    playbackState.add(playbackState.value!.copyWith(
       controls: [
         MediaControl.skipToPrevious,
-        if (_player.playing) MediaControl.pause else MediaControl.play,
+        if (playing) MediaControl.pause else MediaControl.play,
         MediaControl.stop,
         MediaControl.skipToNext,
       ],
-      systemActions: [
-        MediaAction.seekTo,
+      systemActions: const {
+        MediaAction.seek,
         MediaAction.seekForward,
         MediaAction.seekBackward,
-      ],
-      androidCompactActions: [0, 1, 3],
-      processingState: _getProcessingState(),
-      playing: _player.playing,
-      position: _player.position,
+      },
+      androidCompactActionIndices: const [0, 1, 3],
+      processingState: const {
+        ProcessingState.idle: AudioProcessingState.idle,
+        ProcessingState.loading: AudioProcessingState.loading,
+        ProcessingState.buffering: AudioProcessingState.buffering,
+        ProcessingState.ready: AudioProcessingState.ready,
+        ProcessingState.completed: AudioProcessingState.completed,
+      }[_player.processingState]!,
+      playing: playing,
+      updatePosition: _player.position,
       bufferedPosition: _player.bufferedPosition,
       speed: _player.speed,
-    );
+      queueIndex: event.currentIndex,
+    ));
   }
+}
 
-  /// Maps just_audio's processing state into into audio_service's playing
-  /// state. If we are in the middle of a skip, we use [_skipState] instead.
-  AudioProcessingState _getProcessingState() {
-    if (_skipState != null) return _skipState!;
-    switch (_player.processingState) {
-      case ProcessingState.idle:
-        return AudioProcessingState.stopped;
-      case ProcessingState.loading:
-        return AudioProcessingState.connecting;
-      case ProcessingState.buffering:
-        return AudioProcessingState.buffering;
-      case ProcessingState.ready:
-        return AudioProcessingState.ready;
-      case ProcessingState.completed:
-        return AudioProcessingState.completed;
-      default:
-        throw Exception("Invalid state: ${_player.processingState}");
-    }
-  }
+/// Provides access to a library of media items. In your app, this could come
+/// from a database or web service.
+class MediaLibrary {
+  static const albumsRootId = 'albums';
+
+  final items = <String, List<MediaItem>>{
+    AudioService.browsableRootId: const [
+      MediaItem(
+        id: albumsRootId,
+        album: "",
+        title: "Albums",
+        playable: false,
+      ),
+    ],
+    albumsRootId: [
+      MediaItem(
+        id: 'https://s3.amazonaws.com/scifri-episodes/scifri20181123-episode.mp3',
+        album: "Science Friday",
+        title: "A Salute To Head-Scratching Science",
+        artist: "Science Friday and WNYC Studios",
+        duration: const Duration(milliseconds: 5739820),
+        artUri: Uri.parse(
+            'https://media.wnyc.org/i/1400/1400/l/80/1/ScienceFriday_WNYCStudios_1400.jpg'),
+      ),
+      MediaItem(
+        id: 'https://s3.amazonaws.com/scifri-segments/scifri201711241.mp3',
+        album: "Science Friday",
+        title: "From Cat Rheology To Operatic Incompetence",
+        artist: "Science Friday and WNYC Studios",
+        duration: const Duration(milliseconds: 2856950),
+        artUri: Uri.parse(
+            'https://media.wnyc.org/i/1400/1400/l/80/1/ScienceFriday_WNYCStudios_1400.jpg'),
+      ),
+    ],
+  };
 }

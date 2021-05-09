@@ -1,8 +1,6 @@
 import 'dart:async';
-
-import 'package:as_test/seek.dart';
 import 'package:as_test/player.dart';
-
+import 'package:as_test/seek.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
@@ -10,7 +8,31 @@ import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:rxdart/rxdart.dart';
 
-void main() => runApp(new MyApp());
+// You might want to provide this using dependency injection rather than a
+// global variable.
+late AudioHandler _audioHandler;
+
+/// Extension methods for our custom actions.
+extension DemoAudioHandler on AudioHandler {
+  Future<void> switchToHandler(int? index) async {
+    if (index == null) return;
+    await _audioHandler.updateQueue(MainScreen.queues[index]);
+  }
+}
+
+Future<void> main() async {
+  _audioHandler = await AudioService.init(
+    builder: () => LoggingAudioHandler(MainSwitchHandler([
+      AudioPlayerHandler(),
+    ])),
+    config: AudioServiceConfig(
+      androidNotificationChannelName: 'Audio Service Demo',
+      androidNotificationOngoing: true,
+      androidEnableQueue: true,
+    ),
+  );
+  runApp(MyApp());
+}
 
 class MyApp extends StatelessWidget {
   @override
@@ -18,15 +40,42 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'Audio Service Demo',
       theme: ThemeData(primarySwatch: Colors.blue),
-      routes: {
-        '/': (c) => AudioServiceWidget(child: MainScreen()),
-        'PlaybackPage': (c) => PlaybackPage(),
-      },
+      home: MainScreen(),
     );
   }
 }
 
 class MainScreen extends StatelessWidget {
+  static const handlerNames = [
+    'Audio Player',
+    'Text-To-Speech',
+  ];
+
+  static final queues = <List<MediaItem>>[
+    <MediaItem>[
+      MediaItem(
+        id: 'https://s3.amazonaws.com/scifri-episodes/scifri20181123-episode.mp3',
+        album: "Science Friday",
+        title: "A Salute To Head-Scratching Science",
+        artist: "Science Friday and WNYC Studios",
+        duration: const Duration(milliseconds: 5739820),
+        artUri: Uri.parse(
+            'https://media.wnyc.org/i/1400/1400/l/80/1/ScienceFriday_WNYCStudios_1400.jpg'),
+      ),
+    ],
+    <MediaItem>[
+      MediaItem(
+        id: 'https://s3.amazonaws.com/scifri-segments/scifri201711241.mp3',
+        album: "Science Friday",
+        title: "From Cat Rheology To Operatic Incompetence",
+        artist: "Science Friday and WNYC Studios",
+        duration: const Duration(milliseconds: 2856950),
+        artUri: Uri.parse(
+            'https://media.wnyc.org/i/1400/1400/l/80/1/ScienceFriday_WNYCStudios_1400.jpg'),
+      ),
+    ],
+  ];
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -34,142 +83,29 @@ class MainScreen extends StatelessWidget {
         title: const Text('Audio Service Demo'),
       ),
       body: Center(
-        child: StreamBuilder<bool>(
-          stream: AudioService.runningStream,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState != ConnectionState.active) {
-              // Don't show anything until we've ascertained whether or not the
-              // service is running, since we want to show a different UI in
-              // each case.
-              return SizedBox();
-            }
-            final running = snapshot.data ?? false;
-            return Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                audioPlayerButtonQueueOne(running, Navigator.of(context)),
-                audioPlayerButtonQueueTwo(running, Navigator.of(context)),
-                startButton("PlaybackPage", () {
-                  Navigator.of(context).pushNamed("PlaybackPage");
-                })
-              ],
-            );
-          },
-        ),
-      ),
-    );
-  }
-
-  ElevatedButton audioPlayerButtonQueueOne(
-          bool running, NavigatorState navigator) =>
-      startButton(
-        'AudioPlayer Q1',
-        () async {
-          if (running) {
-            await AudioService.stop();
-          }
-          navigator.pushNamed("PlaybackPage");
-          AudioService.start(
-            backgroundTaskEntrypoint: audioPlayerTaskEntrypoint,
-            androidNotificationChannelName: 'Audio Service Demo',
-            params: {
-              "queue": <MediaItem>[
-                MediaItem(
-                  // This can be any unique id, but we use the audio URL for convenience.
-                  id: "https://s3.amazonaws.com/scifri-episodes/scifri20181123-episode.mp3",
-                  album: "Science Friday",
-                  title: "A Salute To Head-Scratching Science",
-                  artist: "Science Friday and WNYC Studios",
-                  duration: Duration(milliseconds: 5739820),
-                  artUri: Uri.parse(
-                      "https://media.wnyc.org/i/1400/1400/l/80/1/ScienceFriday_WNYCStudios_1400.jpg"),
-                ),
-              ].map((i) => i.toJson()).toList(),
-            },
-            // Enable this if you want the Android service to exit the foreground state on pause.
-            //androidStopForegroundOnPause: true,
-            androidNotificationColor: 0xFF2196f3,
-            androidNotificationIcon: 'mipmap/ic_launcher',
-            androidEnableQueue: true,
-          );
-        },
-      );
-
-  ElevatedButton audioPlayerButtonQueueTwo(
-          bool running, NavigatorState navigator) =>
-      startButton(
-        'AudioPlayer Q2',
-        () async {
-          if (running) {
-            await AudioService.stop();
-          }
-          navigator.pushNamed("PlaybackPage");
-          await AudioService.start(
-            backgroundTaskEntrypoint: audioPlayerTaskEntrypoint,
-            androidNotificationChannelName: 'Audio Service Demo',
-            params: {
-              "queue": <MediaItem>[
-                MediaItem(
-                  id: "https://s3.amazonaws.com/scifri-segments/scifri201711241.mp3",
-                  album: "Science Friday",
-                  title: "From Cat Rheology To Operatic Incompetence",
-                  artist: "Science Friday and WNYC Studios",
-                  duration: Duration(milliseconds: 2856950),
-                  artUri: Uri.parse(
-                      "https://media.wnyc.org/i/1400/1400/l/80/1/ScienceFriday_WNYCStudios_1400.jpg"),
-                ),
-              ].map((i) => i.toJson()).toList(),
-            },
-            // Enable this if you want the Android service to exit the foreground state on pause.
-            //androidStopForegroundOnPause: true,
-            androidNotificationColor: 0xFF2196f3,
-            androidNotificationIcon: 'mipmap/ic_launcher',
-            androidEnableQueue: true,
-          );
-        },
-      );
-
-  ElevatedButton startButton(String label, VoidCallback onPressed) =>
-      ElevatedButton(
-        child: Text(label),
-        onPressed: onPressed,
-      );
-}
-
-class QueueState {
-  final List<MediaItem>? queue;
-  final MediaItem? mediaItem;
-
-  QueueState(this.queue, this.mediaItem);
-}
-
-class MediaState {
-  final MediaItem? mediaItem;
-  final Duration position;
-
-  MediaState(this.mediaItem, this.position);
-}
-
-class PlaybackPage extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // UI to show when we're running, i.e. player state/controls.
-
             // Queue display/controls.
             StreamBuilder<QueueState>(
               stream: _queueStateStream,
               builder: (context, snapshot) {
                 final queueState = snapshot.data;
-                final queue = queueState?.queue ?? [];
+                final queue = queueState?.queue ?? const [];
                 final mediaItem = queueState?.mediaItem;
+
+                print("MediaItem! $mediaItem");
                 return Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    TextButton(
+                      child: Text("Q1"),
+                      onPressed: () => _audioHandler.switchToHandler(0),
+                    ),
+                    TextButton(
+                      child: Text("Q2"),
+                      onPressed: () => _audioHandler.switchToHandler(1),
+                    ),
                     if (queue.isNotEmpty)
                       Row(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -179,14 +115,14 @@ class PlaybackPage extends StatelessWidget {
                             iconSize: 64.0,
                             onPressed: mediaItem == queue.first
                                 ? null
-                                : AudioService.skipToPrevious,
+                                : _audioHandler.skipToPrevious,
                           ),
                           IconButton(
                             icon: Icon(Icons.skip_next),
                             iconSize: 64.0,
                             onPressed: mediaItem == queue.last
                                 ? null
-                                : AudioService.skipToNext,
+                                : _audioHandler.skipToNext,
                           ),
                         ],
                       ),
@@ -197,7 +133,7 @@ class PlaybackPage extends StatelessWidget {
             ),
             // Play/pause/stop buttons.
             StreamBuilder<bool>(
-              stream: AudioService.playbackStateStream
+              stream: _audioHandler.playbackState
                   .map((state) => state.playing)
                   .distinct(),
               builder: (context, snapshot) {
@@ -220,33 +156,33 @@ class PlaybackPage extends StatelessWidget {
                   duration: mediaState?.mediaItem?.duration ?? Duration.zero,
                   position: mediaState?.position ?? Duration.zero,
                   onChangeEnd: (newPosition) {
-                    AudioService.seekTo(newPosition);
+                    _audioHandler.seek(newPosition);
                   },
                 );
               },
             ),
             // Display the processing state.
             StreamBuilder<AudioProcessingState>(
-              stream: AudioService.playbackStateStream
+              stream: _audioHandler.playbackState
                   .map((state) => state.processingState)
                   .distinct(),
               builder: (context, snapshot) {
                 final processingState =
-                    snapshot.data ?? AudioProcessingState.none;
+                    snapshot.data ?? AudioProcessingState.idle;
                 return Text(
                     "Processing state: ${describeEnum(processingState)}");
               },
             ),
             // Display the latest custom event.
-            StreamBuilder(
-              stream: AudioService.customEventStream,
+            StreamBuilder<dynamic>(
+              stream: _audioHandler.customEvent,
               builder: (context, snapshot) {
                 return Text("custom event: ${snapshot.data}");
               },
             ),
             // Display the notification click status.
             StreamBuilder<bool>(
-              stream: AudioService.notificationClickEventStream,
+              stream: AudioService.notificationClickEvent,
               builder: (context, snapshot) {
                 return Text(
                   'Notification Click Status: ${snapshot.data}',
@@ -263,33 +199,39 @@ class PlaybackPage extends StatelessWidget {
   /// current position.
   Stream<MediaState> get _mediaStateStream =>
       Rx.combineLatest2<MediaItem?, Duration, MediaState>(
-          AudioService.currentMediaItemStream,
-          AudioService.positionStream,
+          _audioHandler.mediaItem,
+          AudioService.getPositionStream(),
           (mediaItem, position) => MediaState(mediaItem, position));
 
   /// A stream reporting the combined state of the current queue and the current
   /// media item within that queue.
   Stream<QueueState> get _queueStateStream =>
       Rx.combineLatest2<List<MediaItem>?, MediaItem?, QueueState>(
-          AudioService.queueStream,
-          AudioService.currentMediaItemStream,
+          _audioHandler.queue,
+          _audioHandler.mediaItem,
           (queue, mediaItem) => QueueState(queue, mediaItem));
+
+  ElevatedButton startButton(String label, VoidCallback onPressed) =>
+      ElevatedButton(
+        onPressed: onPressed,
+        child: Text(label),
+      );
 
   IconButton playButton() => IconButton(
         icon: Icon(Icons.play_arrow),
         iconSize: 64.0,
-        onPressed: AudioService.play,
+        onPressed: _audioHandler.play,
       );
 
   IconButton pauseButton() => IconButton(
         icon: Icon(Icons.pause),
         iconSize: 64.0,
-        onPressed: AudioService.pause,
+        onPressed: _audioHandler.pause,
       );
 
   IconButton stopButton() => IconButton(
         icon: Icon(Icons.stop),
         iconSize: 64.0,
-        onPressed: AudioService.stop,
+        onPressed: _audioHandler.stop,
       );
 }

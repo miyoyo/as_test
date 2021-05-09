@@ -1,8 +1,6 @@
 import 'dart:math';
 
-import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
-import 'package:just_audio/just_audio.dart';
 
 class SeekBar extends StatefulWidget {
   final Duration duration;
@@ -27,8 +25,10 @@ class _SeekBarState extends State<SeekBar> {
 
   @override
   Widget build(BuildContext context) {
-    final value = min(_dragValue ?? widget.position.inMilliseconds.toDouble(),
-        widget.duration.inMilliseconds.toDouble());
+    final value = min(
+      _dragValue ?? widget.position.inMilliseconds.toDouble(),
+      widget.duration.inMilliseconds.toDouble(),
+    );
     if (_dragValue != null && !_dragging) {
       _dragValue = null;
     }
@@ -71,34 +71,4 @@ class _SeekBarState extends State<SeekBar> {
   }
 
   Duration get _remaining => widget.duration - widget.position;
-}
-
-class Seeker {
-  final AudioPlayer player;
-  final Duration positionInterval;
-  final Duration stepInterval;
-  final MediaItem mediaItem;
-  bool _running = false;
-
-  Seeker(
-    this.player,
-    this.positionInterval,
-    this.stepInterval,
-    this.mediaItem,
-  );
-
-  start() async {
-    _running = true;
-    while (_running) {
-      Duration newPosition = player.position + positionInterval;
-      if (newPosition < Duration.zero) newPosition = Duration.zero;
-      if (newPosition > mediaItem.duration!) newPosition = mediaItem.duration!;
-      player.seek(newPosition);
-      await Future.delayed(stepInterval);
-    }
-  }
-
-  stop() {
-    _running = false;
-  }
 }
